@@ -2,11 +2,13 @@ extern crate winapi;
 extern crate kernel32;
 extern crate libc;
 //#[macro_use] extern crate minhook;
+extern crate toml;
+extern crate rustc_serialize;
 
 use std::mem;
 
 use std::fs::File;
-use std::io::Write;
+use std::io::{Write, Read};
 use std::ffi::{CStr, CString};
 
 use winapi::*;
@@ -15,6 +17,10 @@ use winapi::guiddef::*;
 use winapi::unknwnbase::*;
 use winapi::winerror::*;
 use kernel32::*;
+
+mod config;
+
+use config::Config;
 
 fn get_system_directory() -> CString {
     unsafe {
@@ -43,31 +49,64 @@ type PFNDirectInput8Create = extern "stdcall" fn(HINSTANCE, DWORD, *const IID, *
 //#[no_mangle]
 #[export_name = "DirectInput8Create"]
 pub extern "stdcall" fn DirectInput8Create(inst: HINSTANCE, version: DWORD, riid: *const IID, out: *mut LPVOID, u: LPUNKNOWN) -> HRESULT {
-    let mut f = File::create("foo.txt").unwrap();
-    let a: Option<isize> = None;
-    writeln!(f, "lol it opened {:?}", a).unwrap();
-
+    let mut log = File::create("psuseed.log").unwrap();
     let syspath = get_system_directory().into_string().unwrap() + "\\dinput8.dll";
-    writeln!(f, "syspath is {}", syspath).unwrap();
     unsafe {
         let hMod = LoadLibraryA(syspath.as_ptr() as LPCSTR);
         let fnName = CString::new("DirectInput8Create").unwrap();
         let procaddr = mem::transmute::<FARPROC, PFNDirectInput8Create>(GetProcAddress(hMod, fnName.as_ptr() as LPCSTR));
-        writeln!(f, "function addr is {:p}", &procaddr).unwrap();
         let res = (procaddr)(inst, version, riid, out, u);
 
-        // do our memory changes
-        let addr1 = 0x0086ED7Cusize as *mut c_char;
-        let addr2 = 0x008BD900usize as *mut c_char;
-        let addr3 = 0x008BD93Cusize as *mut c_char;
-        let addr4 = 0x008BD9C8usize as *mut c_char;
-        let addr5 = 0x008BD9E4usize as *mut c_char;
+        // read config
+        let config: Config = match File::open("psuseed.toml") {
+            Ok(mut f) => {
+                writeln!(log, "Opened psuseed.toml").unwrap();
+                let mut cfgstr = String::new();
+                f.read_to_string(&mut cfgstr).unwrap();
+                match toml::decode_str(&cfgstr) {
+                    Some(c) => {
+                        writeln!(log, "Parsed contents of psuseed.toml: {:?}", c).unwrap();
+                        c
+                    },
+                    None => {
+                        writeln!(log, "Failed to parse psuseed.toml").unwrap();
+                        Default::default()
+                    }
+                }
+            },
+            Err(e) => {
+                writeln!(log, "Unable to open psuseed.toml: {}", e).unwrap();
+                Default::default()
+            }
+        };
 
-        write_bytes(b"localhost\0", addr1);
-        write_bytes(b"localhost\0", addr2);
-        write_bytes(b"localhost\0", addr3);
-        write_bytes(b"localhost\0", addr4);
-        write_bytes(b"localhost\0", addr5);
+        if let Some(ref host) = config.host {
+            let addr1 = 0x0086ED7Cusize as *mut c_char;
+            let addr2 = 0x008BD900usize as *mut c_char;
+            let addr3 = 0x008BD93Cusize as *mut c_char;
+            let addr4 = 0x008BD9C8usize as *mut c_char;
+            let addr5 = 0x008BD9E4usize as *mut c_char;
+            write_bytes(host.as_bytes(), addr1);
+            write_bytes(host.as_bytes(), addr2);
+            write_bytes(host.as_bytes(), addr3);
+            write_bytes(host.as_bytes(), addr4);
+            write_bytes(host.as_bytes(), addr5);
+        }
+
+        if let Some(ref port) = config.patch_port {
+            let addr = 0x0089CDE4usize as *mut c_int;
+            *addr = *port as c_int;
+        }
+        if let Some(ref port) = config.login_port {
+            let addr = 0x0098F690usize as *mut c_int;
+            *addr = *port as c_int;
+        }
+
+        // do our memory changes
+
+        // patch port 0x0089CDE4
+        // login port 0x0098F690
+
         res
     }
 }

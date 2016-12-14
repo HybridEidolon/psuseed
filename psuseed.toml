@@ -1,0 +1,3 @@
+host = "psu-clementine.ddns.net"
+patch_port = 11030
+login_port = 12030
