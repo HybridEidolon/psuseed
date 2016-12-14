@@ -19,7 +19,7 @@ use kernel32::*;
 fn get_system_directory() -> CString {
     unsafe {
         let mut syspath: [u8; MAX_PATH] = [0; MAX_PATH];
-        let syspath_ptr: LPSTR = mem::transmute(&mut syspath);
+        let syspath_ptr: LPSTR = mem::transmute::<_, LPSTR>(&mut syspath);
         let len = GetSystemDirectoryA(syspath_ptr, MAX_PATH as u32) as usize + 1;
         match CStr::from_bytes_with_nul(&syspath[..len+1]) {
             Ok(c) => c.to_owned(),
@@ -46,9 +46,15 @@ pub extern "stdcall" fn DirectInput8Create(inst: HINSTANCE, version: DWORD, riid
     unsafe {
         let hMod = LoadLibraryA(syspath.as_ptr() as LPCSTR);
         let fnName = CString::new("DirectInput8Create").unwrap();
-        let procaddr: PFNDirectInput8Create = mem::transmute(GetProcAddress(hMod, fnName.as_ptr() as LPCSTR));
+        let procaddr = mem::transmute::<FARPROC, PFNDirectInput8Create>(GetProcAddress(hMod, fnName.as_ptr() as LPCSTR));
         writeln!(f, "function addr is {:p}", &procaddr).unwrap();
         let res = (procaddr)(inst, version, riid, out, u);
         res
     }
+}
+
+#[allow(non_snake_case)]
+#[no_mangle]
+pub extern "stdcall" fn DllMain(_module: HMODULE, _reason: DWORD, _reserved: LPVOID) -> BOOL {
+    1
 }
