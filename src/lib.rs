@@ -1,5 +1,6 @@
 extern crate winapi;
 extern crate kernel32;
+extern crate psapi;
 extern crate libc;
 //#[macro_use] extern crate minhook;
 extern crate toml;
@@ -8,8 +9,9 @@ extern crate rustc_serialize;
 use std::mem;
 
 use std::fs::File;
+use std::path::{Path, PathBuf};
 use std::io::{Write, Read};
-use std::ffi::{CStr, CString};
+use std::ffi::{CStr, CString, OsStr};
 
 use winapi::*;
 use winapi::minwindef::*;
@@ -17,6 +19,7 @@ use winapi::guiddef::*;
 use winapi::unknwnbase::*;
 use winapi::winerror::*;
 use kernel32::*;
+use psapi::*;
 
 mod config;
 
@@ -42,6 +45,17 @@ unsafe fn write_bytes(s: &[u8], p: *mut c_char) {
     }
 }
 
+fn get_cstring_fun<F>(len: usize, f: F) -> String where F: FnOnce(*mut c_char) -> usize {
+    let mut buffer = vec![0u8; len].into_boxed_slice();
+    let read = unsafe {
+        let mut slice = &mut buffer[..];
+        (f)(slice.as_mut_ptr() as *mut c_char)
+    };
+    let mut vec = buffer.into_vec();
+    vec.truncate(read);
+    CString::new(vec).map(|c| c.into_string().unwrap_or("error into_string".to_string())).unwrap_or("error".to_string())
+}
+
 #[allow(non_snake_case)]
 type PFNDirectInput8Create = extern "stdcall" fn(HINSTANCE, DWORD, *const IID, *mut LPVOID, LPUNKNOWN) -> HRESULT;
 
@@ -56,6 +70,18 @@ pub extern "stdcall" fn DirectInput8Create(inst: HINSTANCE, version: DWORD, riid
         let fnName = CString::new("DirectInput8Create").unwrap();
         let procaddr = mem::transmute::<FARPROC, PFNDirectInput8Create>(GetProcAddress(hMod, fnName.as_ptr() as LPCSTR));
         let res = (procaddr)(inst, version, riid, out, u);
+
+
+        let my_process = GetCurrentProcess();
+        let process_name = get_cstring_fun(256, move|buf| {
+            GetModuleFileNameA(0 as HINSTANCE, buf, 256 as DWORD) as usize
+        });
+        let mut path = PathBuf::from(process_name);
+        if let Some(ref p) = path.file_name() {
+            if p == &OsStr::new("option.exe") {
+                return res;
+            }
+        }
 
         // read config
         let config: Config = match File::open("psuseed.toml") {
