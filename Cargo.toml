@@ -12,6 +12,3 @@ libc = "*"
 [lib]
 name = "dinput8"
 crate-type = ["cdylib"]
-
-[profile.dev]
-lto=true
