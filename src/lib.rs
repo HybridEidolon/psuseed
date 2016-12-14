@@ -30,6 +30,13 @@ fn get_system_directory() -> CString {
     }
 }
 
+unsafe fn write_str(s: &str, p: *mut c_char) {
+    let bytes = s.as_bytes();
+    for (i, x) in bytes.iter().enumerate() {
+        *p.offset(i as isize) = *x as i8;
+    }
+}
+
 #[allow(non_snake_case)]
 type PFNDirectInput8Create = extern "stdcall" fn(HINSTANCE, DWORD, *const IID, *mut LPVOID, LPUNKNOWN) -> HRESULT;
 
@@ -49,6 +56,19 @@ pub extern "stdcall" fn DirectInput8Create(inst: HINSTANCE, version: DWORD, riid
         let procaddr = mem::transmute::<FARPROC, PFNDirectInput8Create>(GetProcAddress(hMod, fnName.as_ptr() as LPCSTR));
         writeln!(f, "function addr is {:p}", &procaddr).unwrap();
         let res = (procaddr)(inst, version, riid, out, u);
+
+        // do our memory changes
+        let addr1 = 0x0086ED7Cusize as *mut c_char;
+        let addr2 = 0x008BD900usize as *mut c_char;
+        let addr3 = 0x008BD93Cusize as *mut c_char;
+        let addr4 = 0x008BD9C8usize as *mut c_char;
+        let addr5 = 0x008BD9E4usize as *mut c_char;
+
+        write_str("localhost\0", addr1);
+        write_str("localhost\0", addr2);
+        write_str("localhost\0", addr3);
+        write_str("localhost\0", addr4);
+        write_str("localhost\0", addr5);
         res
     }
 }
