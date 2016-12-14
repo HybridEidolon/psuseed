@@ -55,6 +55,19 @@ pub extern "stdcall" fn DirectInput8Create(inst: HINSTANCE, version: DWORD, riid
 
 #[allow(non_snake_case)]
 #[no_mangle]
-pub extern "stdcall" fn DllMain(_module: HMODULE, _reason: DWORD, _reserved: LPVOID) -> BOOL {
+pub extern "stdcall" fn DllMain(module: HMODULE, reason: DWORD, _reserved: LPVOID) -> BOOL {
+    // https://msdn.microsoft.com/en-us/library/windows/desktop/ms682583(v=vs.85).aspx
+    match reason {
+        1 => {
+            // DLL_PROCESS_ATTACH
+            unsafe {
+                DisableThreadLibraryCalls(module);
+            }
+        },
+        0 => {
+            // DLL_PROCESS_DETACH
+        },
+        _ => ()
+    }
     1
 }
