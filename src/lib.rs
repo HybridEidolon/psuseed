@@ -30,9 +30,8 @@ fn get_system_directory() -> CString {
     }
 }
 
-unsafe fn write_str(s: &str, p: *mut c_char) {
-    let bytes = s.as_bytes();
-    for (i, x) in bytes.iter().enumerate() {
+unsafe fn write_bytes(s: &[u8], p: *mut c_char) {
+    for (i, x) in s.iter().enumerate() {
         *p.offset(i as isize) = *x as i8;
     }
 }
@@ -64,11 +63,11 @@ pub extern "stdcall" fn DirectInput8Create(inst: HINSTANCE, version: DWORD, riid
         let addr4 = 0x008BD9C8usize as *mut c_char;
         let addr5 = 0x008BD9E4usize as *mut c_char;
 
-        write_str("localhost\0", addr1);
-        write_str("localhost\0", addr2);
-        write_str("localhost\0", addr3);
-        write_str("localhost\0", addr4);
-        write_str("localhost\0", addr5);
+        write_bytes(b"localhost\0", addr1);
+        write_bytes(b"localhost\0", addr2);
+        write_bytes(b"localhost\0", addr3);
+        write_bytes(b"localhost\0", addr4);
+        write_bytes(b"localhost\0", addr5);
         res
     }
 }
