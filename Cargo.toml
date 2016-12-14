@@ -1,11 +1,13 @@
 [package]
 name = "psuseed"
 version = "0.1.0"
-authors = ["Ronald Kinard <furyhunter600@gmail.com>"]
+authors = ["Eidolon"]
 
 [dependencies]
 #minhook = { git = "https://github.com/Jascha-N/minhook-rs" }
 winapi = "0.2"
+kernel32-sys = "0.2"
+libc = "*"
 
 [lib]
 name = "dinput8"
