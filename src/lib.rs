@@ -1,17 +1,23 @@
 extern crate winapi;
 extern crate kernel32;
 extern crate psapi;
+extern crate user32;
 extern crate libc;
 //#[macro_use] extern crate minhook;
 extern crate toml;
 extern crate rustc_serialize;
+#[macro_use] extern crate lazy_static;
+#[macro_use] extern crate log;
 
 use std::mem;
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
-use std::io::{Write, Read};
+use std::io::{self, Write, Read};
 use std::ffi::{CStr, CString, OsStr};
+use std::sync::Mutex;
+use std::thread;
+use std::time::Duration;
 
 use winapi::*;
 use winapi::minwindef::*;
@@ -20,10 +26,18 @@ use winapi::unknwnbase::*;
 use winapi::winerror::*;
 use kernel32::*;
 use psapi::*;
+use user32::*;
 
 mod config;
+mod logger;
+
+use logger::SimpleLogger;
 
 use config::Config;
+
+lazy_static! {
+    static ref CONFIG: Mutex<Option<Config>> = Mutex::new(None);
+}
 
 fn get_system_directory() -> CString {
     unsafe {
@@ -63,7 +77,6 @@ type PFNDirectInput8Create = extern "stdcall" fn(HINSTANCE, DWORD, *const IID, *
 //#[no_mangle]
 #[export_name = "DirectInput8Create"]
 pub extern "stdcall" fn DirectInput8Create(inst: HINSTANCE, version: DWORD, riid: *const IID, out: *mut LPVOID, u: LPUNKNOWN) -> HRESULT {
-    let mut log = File::create("psuseed.log").unwrap();
     let syspath = get_system_directory().into_string().unwrap() + "\\dinput8.dll";
     unsafe {
         let hMod = LoadLibraryA(syspath.as_ptr() as LPCSTR);
@@ -71,42 +84,158 @@ pub extern "stdcall" fn DirectInput8Create(inst: HINSTANCE, version: DWORD, riid
         let procaddr = mem::transmute::<FARPROC, PFNDirectInput8Create>(GetProcAddress(hMod, fnName.as_ptr() as LPCSTR));
         let res = (procaddr)(inst, version, riid, out, u);
 
+        let mut cfg = match CONFIG.lock() {
+            Ok(c) => c,
+            Err(_) => return res
+        };
 
+        if let Some(true) = cfg.as_ref().and_then(|v| v.borderless) {
+            match find_main_window() {
+                Some(hwnd) => {
+                    info!("Found main window. hwnd={:x}", hwnd as usize);
+                    thread::sleep(Duration::from_millis(500));
+                    let mut style = GetWindowLongA(hwnd, GWL_STYLE);
+                    style &= !(WS_CAPTION | WS_THICKFRAME) as LONG;
+                    SetWindowLongA(hwnd, GWL_STYLE, style);
+                    let mut style = GetWindowLongA(hwnd, GWL_EXSTYLE);
+                    style &= !(WS_EX_DLGMODALFRAME | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE) as LONG;
+                    SetWindowLongA(hwnd, GWL_EXSTYLE, style);
+
+                    let ((x, y), (width, height)) = get_desktop_dimensions(hwnd);
+
+                    SetWindowPos(hwnd, 0 as HWND,
+                        x as c_int,
+                        y as c_int,
+                        width as c_int,
+                        height as c_int,
+                        SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+                },
+                None => {
+                    error!("Unable to find main window; border not set")
+                }
+            }
+        }
+
+        res
+    }
+}
+
+fn get_desktop_dimensions(hwnd: HWND) -> ((i32, i32), (u32, u32)) {
+    unsafe {
+        let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        let mut minfo = MONITORINFO {
+            cbSize: mem::size_of::<MONITORINFO>() as DWORD,
+            rcMonitor: RECT {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0
+            },
+            rcWork: RECT {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0
+            },
+            dwFlags: 0
+        };
+
+        GetMonitorInfoA(monitor, &mut minfo as *mut MONITORINFO);
+        let x = minfo.rcMonitor.left as i32;
+        let y = minfo.rcMonitor.top as i32;
+        let x2 = minfo.rcMonitor.right as i32;
+        let y2 = minfo.rcMonitor.bottom as i32;
+        let width = (x2 - x) as u32;
+        let height = (y2 - y) as u32;
+        ((x, y), (width, height))
+    }
+}
+
+fn find_main_window() -> Option<HWND> {
+    unsafe {
+        struct ProcData {
+            pub pid: DWORD,
+            pub handle: Option<HWND>
+        }
+        unsafe fn is_main_window(hwnd: HWND) -> bool {
+            GetWindow(hwnd, GW_OWNER) == 0 as HWND && (IsWindowVisible(hwnd) > 0)
+        }
+        unsafe extern "system" fn enumproc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+            let mut pdata = &mut *(lparam as *mut ProcData);
+            let mut r: DWORD = 0;
+            GetWindowThreadProcessId(hwnd, &mut r as LPDWORD);
+            if pdata.pid != r {
+                return TRUE;
+            }
+            pdata.handle = Some(hwnd);
+            FALSE
+        }
+
+        let mut my_proc_id = GetCurrentProcessId();
+        let mut procdata = ProcData {
+            pid: 0,
+            handle: None
+        };
+        procdata.pid = my_proc_id;
+        let cb = Some((enumproc as unsafe extern "system" fn(HWND, LPARAM) -> BOOL)) as WNDENUMPROC;
+        EnumWindows(cb, (&mut procdata as *mut ProcData) as LPARAM);
+        procdata.handle
+    }
+}
+
+fn get_executable_name() -> Option<String> {
+    unsafe {
         let my_process = GetCurrentProcess();
         let process_name = get_cstring_fun(256, move|buf| {
             GetModuleFileNameA(0 as HINSTANCE, buf, 256 as DWORD) as usize
         });
         let mut path = PathBuf::from(process_name);
-        if let Some(ref p) = path.file_name() {
-            if p == &OsStr::new("option.exe") {
-                return res;
-            }
+        path.file_name().map(|p| p.to_string_lossy().into_owned())
+    }
+}
+
+fn load_config() -> io::Result<Config> {
+    let mut file = File::open("psuseed.toml")?;
+    let mut cfgstr = String::new();
+    file.read_to_string(&mut cfgstr)?;
+    match toml::decode_str(&cfgstr) {
+        Some(c) => Ok(c),
+        None => Ok(Default::default())
+    }
+}
+
+fn init() {
+    match get_executable_name() {
+        Some(ref p) if p == "option.exe" => return,
+        _ => ()
+    }
+    let logger = match SimpleLogger::new("psuseed.log") {
+        Ok(l) => l,
+        Err(_) => return
+    };
+
+    match log::set_logger(move |max_log_level| {
+        max_log_level.set(log::LogLevelFilter::Debug);
+        Box::new(logger)
+    }) {
+        Ok(_) => {},
+        Err(_) => return
+    }
+
+    let config = match load_config() {
+        Ok(c) => {
+            info!("Config loaded. config={:?}", c);
+            c
+        },
+        Err(e) => {
+            error!("Unable to load config. {}", e);
+            return
         }
+    };
 
-        // read config
-        let config: Config = match File::open("psuseed.toml") {
-            Ok(mut f) => {
-                writeln!(log, "Opened psuseed.toml").unwrap();
-                let mut cfgstr = String::new();
-                f.read_to_string(&mut cfgstr).unwrap();
-                match toml::decode_str(&cfgstr) {
-                    Some(c) => {
-                        writeln!(log, "Parsed contents of psuseed.toml: {:?}", c).unwrap();
-                        c
-                    },
-                    None => {
-                        writeln!(log, "Failed to parse psuseed.toml").unwrap();
-                        Default::default()
-                    }
-                }
-            },
-            Err(e) => {
-                writeln!(log, "Unable to open psuseed.toml: {}", e).unwrap();
-                Default::default()
-            }
-        };
-
+    unsafe {
         if let Some(ref host) = config.host {
+            info!("Setting hosts. host={}", host);
             let addr1 = 0x0086ED7Cusize as *mut c_char;
             let addr2 = 0x008BD900usize as *mut c_char;
             let addr3 = 0x008BD93Cusize as *mut c_char;
@@ -120,20 +249,33 @@ pub extern "stdcall" fn DirectInput8Create(inst: HINSTANCE, version: DWORD, riid
         }
 
         if let Some(ref port) = config.patch_port {
+            info!("Setting patch port. port={}", port);
             let addr = 0x0089CDE4usize as *mut c_int;
             *addr = *port as c_int;
         }
         if let Some(ref port) = config.login_port {
+            info!("Setting login port. port={}", port);
             let addr = 0x0098F690usize as *mut c_int;
             *addr = *port as c_int;
         }
 
-        // do our memory changes
+        // 1280 width: 0x0086FDFC = 0x500 (u32)
+        // 720 height: 0x0086FE00 = 0x2D0 (u32)
+        if let Some(ref width) = config.width {
+            info!("Setting window width. width={}", width);
+            let addr = 0x0086FDFCusize as *mut c_int;
+            *addr = *width as c_int;
+        }
+        if let Some(ref height) = config.height {
+            info!("Setting window height. height={}", height);
+            let addr = 0x0086FE00usize as *mut c_int;
+            *addr = *height as c_int;
+        }
 
-        // patch port 0x0089CDE4
-        // login port 0x0098F690
-
-        res
+        {
+            let mut cfg_guard = CONFIG.lock().unwrap();
+            *cfg_guard = Some(config);
+        }
     }
 }
 
@@ -147,6 +289,7 @@ pub extern "stdcall" fn DllMain(module: HMODULE, reason: DWORD, _reserved: LPVOI
             unsafe {
                 DisableThreadLibraryCalls(module);
             }
+            init();
         },
         0 => {
             // DLL_PROCESS_DETACH

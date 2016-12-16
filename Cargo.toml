@@ -8,9 +8,12 @@ authors = ["Eidolon"]
 winapi = "0.2"
 kernel32-sys = "0.2"
 psapi-sys = "0.1.0"
+user32-sys = "0.2.0"
 libc = "*"
 toml = "0.2.1"
 rustc-serialize = "0.3.22"
+lazy_static = "0.2"
+log = "0.3"
 
 [lib]
 name = "dinput8"
