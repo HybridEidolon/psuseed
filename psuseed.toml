@@ -1,10 +1,13 @@
 host = "psu-clementine.ddns.net"
 patch_port = 11030
 login_port = 12030
+# Disable the minimap. The minimap appears broken on resolutions other than
+# 1280x720, so this may be preferable.
 disable_minimap = false
 
 # In order for the following settings to work, you must set the mode in
 # option.exe to 1280x720 windowed.
 width = 1280
 height = 720
+# Maximizes and sets the window to borderless mode.
 borderless = false
