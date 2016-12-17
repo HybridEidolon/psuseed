@@ -10,7 +10,8 @@ pub struct Config {
     pub width: Option<u32>,
     /// default 720
     pub height: Option<u32>,
-    pub borderless: Option<bool>
+    pub borderless: Option<bool>,
+    pub disable_minimap: Option<bool>
 }
 
 impl Default for Config {
@@ -21,7 +22,8 @@ impl Default for Config {
             login_port: None,
             width: None,
             height: None,
-            borderless: None
+            borderless: None,
+            disable_minimap: None
         }
     }
 }

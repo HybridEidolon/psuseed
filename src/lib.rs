@@ -151,6 +151,13 @@ fn get_desktop_dimensions(hwnd: HWND) -> ((i32, i32), (u32, u32)) {
     }
 }
 
+fn get_base_address() -> usize {
+    unsafe {
+        let base = GetModuleHandleA(0 as LPCSTR) as usize;
+        base
+    }
+}
+
 fn find_main_window() -> Option<HWND> {
     unsafe {
         struct ProcData {
@@ -204,11 +211,23 @@ fn load_config() -> io::Result<Config> {
     }
 }
 
-fn init() {
-    match get_executable_name() {
-        Some(ref p) if p == "option.exe" => return,
-        _ => ()
+fn disable_minimap(base: usize) {
+    unsafe {
+        let mut ptr;
+        // direction
+        ptr = (base + 0x004D7480) as *mut u8;
+        for i in 0..10 {
+            *ptr.offset(i) = 0x00;
+        }
+        // radar_map
+        ptr = (base + 0x004D7594) as *mut u8;
+        for i in 0..10 {
+            *ptr.offset(i) = 0x00;
+        }
     }
+}
+
+fn init() {
     let logger = match SimpleLogger::new("psuseed.log") {
         Ok(l) => l,
         Err(_) => return
@@ -222,6 +241,21 @@ fn init() {
         Err(_) => return
     }
 
+    let apply_mem_patches = match get_executable_name() {
+        Some(ref p) if p == "option.exe" => {
+            info!("Disabling plugin for option.exe");
+            return
+        },
+        Some(ref p) if p == "PSUC.exe" => {
+            warn!("Some settings cannot be applied to compressed PSUC.exe, please use an uncompressed executable.");
+            false
+        }
+        _ => true
+    };
+
+    let base = get_base_address();
+    info!("Process base address: base={:x}", base);
+
     let config = match load_config() {
         Ok(c) => {
             info!("Config loaded. config={:?}", c);
@@ -234,44 +268,50 @@ fn init() {
     };
 
     unsafe {
-        if let Some(ref host) = config.host {
-            info!("Setting hosts. host={}", host);
-            let addr1 = 0x0086ED7Cusize as *mut c_char;
-            let addr2 = 0x008BD900usize as *mut c_char;
-            let addr3 = 0x008BD93Cusize as *mut c_char;
-            let addr4 = 0x008BD9C8usize as *mut c_char;
-            let addr5 = 0x008BD9E4usize as *mut c_char;
-            write_bytes(host.as_bytes(), addr1);
-            write_bytes(host.as_bytes(), addr2);
-            write_bytes(host.as_bytes(), addr3);
-            write_bytes(host.as_bytes(), addr4);
-            write_bytes(host.as_bytes(), addr5);
-        }
+        if apply_mem_patches {
+            if let Some(ref host) = config.host {
+                info!("Setting hosts. host={}", host);
+                let addr1 = (0x0046ED7C + base) as *mut c_char;
+                let addr2 = (0x004BD900 + base) as *mut c_char;
+                let addr3 = (0x004BD93C + base) as *mut c_char;
+                let addr4 = (0x004BD9C8 + base) as *mut c_char;
+                let addr5 = (0x004BD9E4 + base) as *mut c_char;
+                write_bytes(host.as_bytes(), addr1);
+                write_bytes(host.as_bytes(), addr2);
+                write_bytes(host.as_bytes(), addr3);
+                write_bytes(host.as_bytes(), addr4);
+                write_bytes(host.as_bytes(), addr5);
+            }
 
-        if let Some(ref port) = config.patch_port {
-            info!("Setting patch port. port={}", port);
-            let addr = 0x0089CDE4usize as *mut c_int;
-            *addr = *port as c_int;
-        }
-        if let Some(ref port) = config.login_port {
-            info!("Setting login port. port={}", port);
-            let addr = 0x0098F690usize as *mut c_int;
-            *addr = *port as c_int;
-        }
+            if let Some(ref port) = config.patch_port {
+                info!("Setting patch port. port={}", port);
+                let addr = (0x0049CDE4 + base) as *mut c_int;
+                *addr = *port as c_int;
+            }
+            if let Some(ref port) = config.login_port {
+                info!("Setting login port. port={}", port);
+                let addr = (0x0058F690 + base) as *mut c_int;
+                *addr = *port as c_int;
+            }
 
-        // 1280 width: 0x0086FDFC = 0x500 (u32)
-        // 720 height: 0x0086FE00 = 0x2D0 (u32)
-        if let Some(ref width) = config.width {
-            info!("Setting window width. width={}", width);
-            let addr = 0x0086FDFCusize as *mut c_int;
-            *addr = *width as c_int;
-        }
-        if let Some(ref height) = config.height {
-            info!("Setting window height. height={}", height);
-            let addr = 0x0086FE00usize as *mut c_int;
-            *addr = *height as c_int;
-        }
+            // 1280 width: 0x0086FDFC = 0x500 (u32)
+            // 720 height: 0x0086FE00 = 0x2D0 (u32)
+            if let Some(ref width) = config.width {
+                info!("Setting window width. width={}", width);
+                let addr = (0x0046FDFC + base) as *mut c_int;
+                *addr = *width as c_int;
+            }
+            if let Some(ref height) = config.height {
+                info!("Setting window height. height={}", height);
+                let addr = (0x0046FE00 + base) as *mut c_int;
+                *addr = *height as c_int;
+            }
 
+            if let Some(true) = config.disable_minimap {
+                info!("Disabling minimap");
+                disable_minimap(base);
+            }
+        }
         {
             let mut cfg_guard = CONFIG.lock().unwrap();
             *cfg_guard = Some(config);
