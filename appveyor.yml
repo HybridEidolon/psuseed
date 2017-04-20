@@ -33,9 +33,11 @@ test_script:
       cargo test --target %TARGET% --release
     )
 
-before_deploy:
-  - cargo build --target %TARGET% --release
-  - ps: ci\before_deploy.ps1
+after_test:
+  - ps: ci\after_test.ps1
+
+# before_deploy:
+#   - cargo build --target %TARGET% --release
 
 # deploy:
 #   artifact: /.*\.zip/
