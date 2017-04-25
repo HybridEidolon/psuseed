@@ -247,7 +247,7 @@ fn init() {
             return
         },
         Some(ref p) if p == "PSUC.exe" => {
-            warn!("Some settings cannot be applied to compressed PSUC.exe, please use an uncompressed executable.");
+            warn!("Some settings cannot be applied to compressed PSUC.exe, please use an uncompressed executable. Download UPX from https://upx.github.io/ and decompress PSUC.exe using the command line.");
             false
         }
         _ => true

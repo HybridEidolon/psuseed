@@ -16,6 +16,12 @@ psuseed.toml config with a text editor, and run the game.
 In order for memory patches to work, you must be using an uncompressed
 PSU exe. Without it, only the borderless window patch will work.
 
+Clementine executables are compressed with UPX; if you want to decompress
+it yourself, download UPX from [here](https://upx.github.io/) and run the
+following in a command line in your PSU directory:
+
+    upx.exe -d -o PSUC_Uncompressed.exe PSUC.exe
+
 ## Features
 
 - Configurable via psuseed.toml
