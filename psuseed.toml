@@ -1,4 +1,4 @@
-host = "psu-clementine.ddns.net"
+host = "psu-clementine.network"
 patch_port = 11030
 login_port = 12030
 # Disable the minimap. The minimap appears broken on resolutions other than
