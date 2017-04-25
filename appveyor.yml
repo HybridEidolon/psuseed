@@ -25,7 +25,6 @@ install:
   - cargo -V
 
 test_script:
-  # we don't run the "test phase" when doing deploys
   - if [%APPVEYOR_REPO_TAG%]==[false] (
       cargo build --target %TARGET% &&
       cargo build --target %TARGET% --release &&
@@ -36,26 +35,15 @@ test_script:
 after_test:
   - ps: ci\after_test.ps1
 
-# before_deploy:
-#   - cargo build --target %TARGET% --release
-
-# deploy:
-#   artifact: /.*\.zip/
-#   # TODO update `auth_token.secure`
-#   # - Create a `public_repo` GitHub token. Go to: https://github.com/settings/tokens/new
-#   # - Encrypt it. Go to https://ci.appveyor.com/tools/encrypt
-#   # - Paste the output down here
-#   auth_token:
-#     secure: t3puM/2hOig26EHhAodcZBc61NywF7/PFEpimR6SwGaCiqS07KR5i7iAhSABmBp7
-#   description: ''
-#   on:
-#     # TODO Here you can pick which targets will generate binary releases
-#     # In this example, there are some targets that are tested using the stable
-#     # and nightly channels. This condition makes sure there is only one release
-#     # for such targets and that's generated using the stable channel
-#     RUST_VERSION: stable
-#     appveyor_repo_tag: true
-#   provider: GitHub
+deploy:
+  artifact: /.*\.zip/
+  auth_token:
+    secure: YtW5Ddd/rAghsQ+3Iq6IFUTvdH5j8N3CBH9iN4yI3QzMFSBXwYI3txUrhFOoMzVZ
+  description: ''
+  draft: true
+  on:
+    appveyor_repo_tag: true
+  provider: GitHub
 
 cache:
   - C:\Users\appveyor\.cargo\registry
@@ -66,10 +54,6 @@ branches:
     # Release tags
     - /^v\d+\.\d+\.\d+.*$/
     - master
-
-# notifications:
-#   - provider: Email
-#     on_build_success: false
 
 # disable automatic builds
 build: false
