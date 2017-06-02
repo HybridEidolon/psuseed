@@ -278,15 +278,15 @@ fn init() {
                 let addr4 = (0x004BD9C8 + base) as *mut c_char;
                 let addr5 = (0x004BD9E4 + base) as *mut c_char;
                 write_bytes(host_as_bytes, addr1);
-                write_bytes(&[0], addr1 + host_as_bytes.len());
+                write_bytes(&[0], addr1.wrapping_offset(host_as_bytes.len() as isize));
                 write_bytes(host_as_bytes, addr2);
-                write_bytes(&[0], addr2 + host_as_bytes.len());
+                write_bytes(&[0], addr2.wrapping_offset(host_as_bytes.len() as isize));
                 write_bytes(host_as_bytes, addr3);
-                write_bytes(&[0], addr3 + host_as_bytes.len());
+                write_bytes(&[0], addr3.wrapping_offset(host_as_bytes.len() as isize));
                 write_bytes(host_as_bytes, addr4);
-                write_bytes(&[0], addr4 + host_as_bytes.len());
+                write_bytes(&[0], addr4.wrapping_offset(host_as_bytes.len() as isize));
                 write_bytes(host_as_bytes, addr5);
-                write_bytes(&[0], addr5 + host_as_bytes.len());
+                write_bytes(&[0], addr5.wrapping_offset(host_as_bytes.len() as isize));
             }
 
             if let Some(ref port) = config.patch_port {
