@@ -11,7 +11,8 @@ pub struct Config {
     /// default 720
     pub height: Option<u32>,
     pub borderless: Option<bool>,
-    pub disable_minimap: Option<bool>
+    pub disable_minimap: Option<bool>,
+    pub disable_md5_filename_hashing: Option<bool>,
 }
 
 impl Default for Config {
@@ -23,7 +24,8 @@ impl Default for Config {
             width: None,
             height: None,
             borderless: None,
-            disable_minimap: None
+            disable_minimap: None,
+            disable_md5_filename_hashing: None,
         }
     }
 }

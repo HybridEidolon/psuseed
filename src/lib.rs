@@ -1,9 +1,11 @@
+#![feature(asm)]
+
 extern crate winapi;
 extern crate kernel32;
 extern crate psapi;
 extern crate user32;
 extern crate libc;
-//#[macro_use] extern crate minhook;
+#[macro_use] extern crate minhook;
 extern crate toml;
 extern crate rustc_serialize;
 #[macro_use] extern crate lazy_static;
@@ -113,6 +115,13 @@ pub extern "stdcall" fn DirectInput8Create(inst: HINSTANCE, version: DWORD, riid
                 None => {
                     error!("Unable to find main window; border not set")
                 }
+            }
+        }
+
+        if should_apply_mem_patches() {
+            if let Some(true) = cfg.as_ref().and_then(|v| v.disable_md5_filename_hashing) {
+                let base = get_base_address();
+                disable_md5_filename_hashing(base);
             }
         }
 
@@ -227,6 +236,144 @@ fn disable_minimap(base: usize) {
     }
 }
 
+lazy_static! {
+    static ref MD5_HOOK: Mutex<Option<minhook::Hook<unsafe extern "fastcall" fn(*mut c_void, i32, *mut c_char) -> *mut c_void>>> = Mutex::new(None);
+    static ref MD5_HOOK2: Mutex<Option<minhook::Hook<unsafe extern "fastcall" fn(*mut c_void, i32, *mut c_char, i32, i32, i32, i32) -> *mut c_void>>> = Mutex::new(None);
+}
+
+unsafe extern "fastcall" fn md5filename(this: *mut c_void, _ignoreme: i32, name: *mut c_char) -> *mut c_void {
+    let cstr = CStr::from_ptr(name);
+    let base = get_base_address();
+
+    let l = MD5_HOOK.lock().unwrap();
+    let ret = (*l).as_ref().unwrap().trampoline()(this, _ignoreme, name);
+    info!("Client requested to open {:?} and produced hash {:?}", cstr, CStr::from_ptr(this.offset(4) as *mut c_char));
+
+    // clear out the name buffer
+    let file_name_out = this.offset(4) as *mut c_char;
+    for i in 0..32 {
+        *file_name_out.offset(i) = 0;
+    }
+    // clear out the other buffer too!
+    for i in 0..32 {
+        *((base + 0x68885C) as *mut c_char).offset(i) = 0;
+    }
+
+    // nasty loop to copy the input name to the file_name_out buffer
+    let mut i = 0;
+    loop {
+        *file_name_out.offset(i) = *name.offset(i);
+        // ????
+        *((base + 0x68885C) as *mut c_char).offset(i) = *name.offset(i);
+
+        if *name.offset(i) == 0 {
+            break
+        }
+
+        i += 1;
+    }
+    ret
+}
+
+unsafe extern "fastcall" fn md5filename2(this: *mut c_void, _ignoreme: i32, name: *mut c_char, unk1: i32, unk2: i32, unk3: i32, unk4: i32) -> *mut c_void {
+    let cstr = CStr::from_ptr(name);
+    let base = get_base_address();
+
+    let l = MD5_HOOK2.lock().unwrap();
+    let ret = (*l).as_ref().unwrap().trampoline()(this, _ignoreme, name, unk1, unk2, unk3, unk4);
+    info!("Client requested to open {:?} and produced hash {:?}", cstr, CStr::from_ptr(this.offset(4) as *mut c_char));
+
+    // clear out the name buffer
+    let file_name_out = this.offset(4) as *mut c_char;
+    for i in 0..32 {
+        *file_name_out.offset(i) = 0;
+    }
+    // clear out the other buffer too!
+    for i in 0..32 {
+        *((base + 0x68885C) as *mut c_char).offset(i) = 0;
+    }
+
+    // nasty loop to copy the input name to the file_name_out buffer
+    let mut i = 0;
+    loop {
+        *file_name_out.offset(i) = *name.offset(i);
+        // ????
+        *((base + 0x68885C) as *mut c_char).offset(i) = *name.offset(i);
+
+        if *name.offset(i) == 0 {
+            break
+        }
+
+        i += 1;
+    }
+    ret
+}
+
+fn disable_md5_filename_hashing(base: usize) {
+    use minhook::Hook;
+    use minhook::function::Function;
+    use minhook::function::FnPointer;
+
+    // Function 1 (Most nbls?)
+    unsafe {
+        let addr = base + 0x00370880;
+        let mut vpret: DWORD = 0;
+        info!("The filename hashing function is at 0x{:x}", addr);
+        let mut function = <unsafe extern "fastcall" fn(*mut c_void, i32, *mut c_char) -> *mut c_void as Function>::from_ptr(FnPointer::from_raw(addr as *mut c_void));
+
+        VirtualProtect(addr as LPVOID, 32, 0x40, &mut vpret as *mut DWORD);
+        let hook = match Hook::create(function, md5filename as unsafe extern "fastcall" fn(*mut c_void, i32, *mut c_char) -> *mut c_void) {
+            Ok(h) => h,
+            Err(e) => {
+                error!("MD5 HOOK FAILED {} {:?}", e, e);
+                panic!();
+            }
+        };
+        hook.enable().unwrap();
+        {
+            let mut md5hook = MD5_HOOK.lock().unwrap();
+            *md5hook = Some(hook);
+        }
+        info!("Hooked function 1 at {} and marked region as executable", addr);
+    }
+
+    // Function 2 (Used for audio?)
+    unsafe {
+        let addr = base + 0x00370910;
+        let mut vpret: DWORD = 0;
+        info!("The second filename hashing function is at 0x{:x}", addr);
+        let mut function = <unsafe extern "fastcall" fn(*mut c_void, i32, *mut c_char, i32, i32, i32, i32) -> *mut c_void as Function>::from_ptr(FnPointer::from_raw(addr as *mut c_void));
+
+        VirtualProtect(addr as LPVOID, 32, 0x40, &mut vpret as *mut DWORD);
+        let hook = match Hook::create(function, md5filename2 as unsafe extern "fastcall" fn(*mut c_void, i32, *mut c_char, i32, i32, i32, i32) -> *mut c_void) {
+            Ok(h) => h,
+            Err(e) => {
+                error!("MD5 HOOK FAILED {} {:?}", e, e);
+                panic!();
+            }
+        };
+        hook.enable().unwrap();
+        {
+            let mut md5hook = MD5_HOOK2.lock().unwrap();
+            *md5hook = Some(hook);
+        }
+        info!("Hooked function 2 at {} and marked region as executable", addr);
+    }
+}
+
+fn should_apply_mem_patches() -> bool {
+    let apply_mem_patches = match get_executable_name() {
+        Some(ref p) if p == "option.exe" => {
+            false
+        },
+        Some(ref p) if p == "PSUC.exe" => {
+            false
+        }
+        _ => true
+    };
+    apply_mem_patches
+}
+
 fn init() {
     let logger = match SimpleLogger::new("psuseed.log") {
         Ok(l) => l,
@@ -244,7 +391,7 @@ fn init() {
     let apply_mem_patches = match get_executable_name() {
         Some(ref p) if p == "option.exe" => {
             info!("Disabling plugin for option.exe");
-            return
+            false
         },
         Some(ref p) if p == "PSUC.exe" => {
             warn!("Some settings cannot be applied to compressed PSUC.exe, please use an uncompressed executable. Download UPX from https://upx.github.io/ and decompress PSUC.exe using the command line.");

@@ -11,3 +11,13 @@ width = 1280
 height = 720
 # Maximizes and sets the window to borderless mode.
 borderless = false
+
+
+####   Here be dragons    ####
+#### i.e. DEVELOPERS ONLY ####
+
+# Override and disable filename hashing.
+# STOP. THIS WILL NOT WORK UNLESS YOU HAVE RENAMED EVERY FILE IN YOUR
+# DATA DIRECTORY. ONLY ~95% OF THE FILENAMES ARE KNOWN SO DON'T USE
+# THIS UNLESS YOU KNOW WHAT YOU'RE DOING
+disable_md5_filename_hashing = false

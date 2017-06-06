@@ -4,7 +4,7 @@ version = "0.1.1"
 authors = ["Eidolon"]
 
 [dependencies]
-#minhook = { git = "https://github.com/Jascha-N/minhook-rs" }
+minhook = { git = "https://github.com/Jascha-N/minhook-rs" }
 winapi = "0.2"
 kernel32-sys = "0.2"
 psapi-sys = "0.1.0"
