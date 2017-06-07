@@ -13,6 +13,7 @@ pub struct Config {
     pub borderless: Option<bool>,
     pub disable_minimap: Option<bool>,
     pub disable_md5_filename_hashing: Option<bool>,
+    pub hashed_names_path: Option<String>,
 }
 
 impl Default for Config {
@@ -26,6 +27,7 @@ impl Default for Config {
             borderless: None,
             disable_minimap: None,
             disable_md5_filename_hashing: None,
+            hashed_names_path: None,
         }
     }
 }

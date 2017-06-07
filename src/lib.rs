@@ -8,6 +8,7 @@ extern crate libc;
 #[macro_use] extern crate minhook;
 extern crate toml;
 extern crate rustc_serialize;
+extern crate md5;
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate log;
 
@@ -246,6 +247,28 @@ unsafe extern "cdecl" fn md5filename3(name: *mut c_char) -> *mut c_char {
     let base = get_base_address();
 
     info!("Client requested to open {:?}", cstr);
+
+    // Check that the file exists
+    let mut pathbuf = PathBuf::from(".");
+    pathbuf.push("DATA");
+    pathbuf.push(cstr.to_string_lossy().into_owned());
+    if !pathbuf.exists() {
+        let c = CONFIG.lock().unwrap();
+        if let Some(ref hashpath) = (*c).as_ref().unwrap().hashed_names_path.as_ref() {
+            let mut hashpathbuf = PathBuf::from(".");
+            hashpathbuf.push(hashpath);
+            let mut filename = cstr.to_string_lossy().into_owned();
+            filename = filename.replace(".", "a");
+            let hashed_filename = format!("{:x}", md5::compute(filename.as_bytes()));
+            hashpathbuf.push(hashed_filename.as_str());
+            info!("copying from {} to {}...", hashpathbuf.to_string_lossy(), pathbuf.to_string_lossy());
+            std::fs::copy(&hashpathbuf, &pathbuf).unwrap();
+            info!("Copy done");
+        } else {
+            warn!("File not found in DATA dir, the game will probably crash now: {:?}", pathbuf.to_string_lossy());
+        }
+    }
+
 
     for i in 0..32 {
         *((base + 0x68885C) as *mut c_char).offset(i) = 0;

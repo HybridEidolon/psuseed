@@ -17,7 +17,11 @@ borderless = false
 #### i.e. DEVELOPERS ONLY ####
 
 # Override and disable filename hashing.
-# STOP. THIS WILL NOT WORK UNLESS YOU HAVE RENAMED EVERY FILE IN YOUR
-# DATA DIRECTORY. ONLY ~95% OF THE FILENAMES ARE KNOWN SO DON'T USE
-# THIS UNLESS YOU KNOW WHAT YOU'RE DOING
+# You will have to specify a hashed_names_path.
+# e.g. Copy your DATA directory to DATA_Hashed
+# and uncomment the setting below. This will allow
+# the plugin to copy hashed files into their real
+# filenames dynamically, progressively building up
+# your unhashed DATA directory.
 disable_md5_filename_hashing = false
+#hashed_names_path = "DATA_Hashed"

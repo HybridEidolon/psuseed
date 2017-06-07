@@ -28,6 +28,31 @@ following in a command line in your PSU directory:
 - Arbitrary resolution support. 4K!
 - Disable minimap for non-1280x720 (otherwise it bugs)
 - Override server hostname and ports (for you sneaky server devs)
+- Dynamic filename hash recovery. See below for instructions.
+
+### Configuring
+
+Edit the `psuseed.toml` file and change the options as you desire.
+
+### Using unhashed DATA file names
+
+This is an experimental feature that is _mostly_ stable. It will hook
+the file name hashing function and instead return the actual name that
+the client is searching for. If you set the `hashed_names_path`, the
+plugin will first check that the real name's file exists in your DATA
+directory. If the file doesn't exist, it will copy the hashed file
+into your DATA directory under its new name and resume.
+
+The file copying is a blocking procedure and will incur significant
+load times and lag at first, but will progressively get better as
+you continue to play. **In particular, the initial startup will be
+very very slow, as the sound files are >400mb a piece.** Please make
+sure to let it complete the copying procedure and **exit the game
+naturally whenever possible.**
+
+You can also find a list of files online and pre-copy all of them
+to the original names yourself to relieve a lot of the initial build
+up time.
 
 ## Development
 

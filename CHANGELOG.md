@@ -9,8 +9,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ### Added
 
-- Experimental MD5 filename hash override. Intended to be used by
-  developers only, will not work without a special client.
+- Experimental MD5 filename hash override. See the README for instructions.
 
 ## 0.1.1
 
