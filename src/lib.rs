@@ -237,76 +237,25 @@ fn disable_minimap(base: usize) {
 }
 
 lazy_static! {
-    static ref MD5_HOOK: Mutex<Option<minhook::Hook<unsafe extern "fastcall" fn(*mut c_void, i32, *mut c_char) -> *mut c_void>>> = Mutex::new(None);
-    static ref MD5_HOOK2: Mutex<Option<minhook::Hook<unsafe extern "fastcall" fn(*mut c_void, i32, *mut c_char, i32, i32, i32, i32) -> *mut c_void>>> = Mutex::new(None);
+    static ref MD5_HOOK: Mutex<Option<minhook::Hook<unsafe extern "cdecl" fn(*mut c_char) -> *mut c_char>>> = Mutex::new(None);
 }
 
-unsafe extern "fastcall" fn md5filename(this: *mut c_void, _ignoreme: i32, name: *mut c_char) -> *mut c_void {
+unsafe extern "cdecl" fn md5filename3(name: *mut c_char) -> *mut c_char {
     let cstr = CStr::from_ptr(name);
+    let str_bytes = cstr.to_bytes_with_nul();
     let base = get_base_address();
 
-    let l = MD5_HOOK.lock().unwrap();
-    let ret = (*l).as_ref().unwrap().trampoline()(this, _ignoreme, name);
-    info!("Client requested to open {:?} and produced hash {:?}", cstr, CStr::from_ptr(this.offset(4) as *mut c_char));
+    info!("Client requested to open {:?}", cstr);
 
-    // clear out the name buffer
-    let file_name_out = this.offset(4) as *mut c_char;
-    for i in 0..32 {
-        *file_name_out.offset(i) = 0;
-    }
-    // clear out the other buffer too!
     for i in 0..32 {
         *((base + 0x68885C) as *mut c_char).offset(i) = 0;
     }
 
-    // nasty loop to copy the input name to the file_name_out buffer
-    let mut i = 0;
-    loop {
-        *file_name_out.offset(i) = *name.offset(i);
-        // ????
-        *((base + 0x68885C) as *mut c_char).offset(i) = *name.offset(i);
-
-        if *name.offset(i) == 0 {
-            break
-        }
-
-        i += 1;
-    }
-    ret
-}
-
-unsafe extern "fastcall" fn md5filename2(this: *mut c_void, _ignoreme: i32, name: *mut c_char, unk1: i32, unk2: i32, unk3: i32, unk4: i32) -> *mut c_void {
-    let cstr = CStr::from_ptr(name);
-    let base = get_base_address();
-
-    let l = MD5_HOOK2.lock().unwrap();
-    let ret = (*l).as_ref().unwrap().trampoline()(this, _ignoreme, name, unk1, unk2, unk3, unk4);
-    info!("Client requested to open {:?} and produced hash {:?}", cstr, CStr::from_ptr(this.offset(4) as *mut c_char));
-
-    // clear out the name buffer
-    let file_name_out = this.offset(4) as *mut c_char;
-    for i in 0..32 {
-        *file_name_out.offset(i) = 0;
-    }
-    // clear out the other buffer too!
-    for i in 0..32 {
-        *((base + 0x68885C) as *mut c_char).offset(i) = 0;
+    for (i, c) in str_bytes.iter().enumerate() {
+        *((base + 0x68885C) as *mut c_char).offset(i as isize) = *c as i8;
     }
 
-    // nasty loop to copy the input name to the file_name_out buffer
-    let mut i = 0;
-    loop {
-        *file_name_out.offset(i) = *name.offset(i);
-        // ????
-        *((base + 0x68885C) as *mut c_char).offset(i) = *name.offset(i);
-
-        if *name.offset(i) == 0 {
-            break
-        }
-
-        i += 1;
-    }
-    ret
+    (base + 0x68885C) as *mut c_char
 }
 
 fn disable_md5_filename_hashing(base: usize) {
@@ -314,18 +263,19 @@ fn disable_md5_filename_hashing(base: usize) {
     use minhook::function::Function;
     use minhook::function::FnPointer;
 
-    // Function 1 (Most nbls?)
+    // Function 3 (Everything...)
     unsafe {
-        let addr = base + 0x00370880;
+        let addr = base + 0x003748D0;
         let mut vpret: DWORD = 0;
         info!("The filename hashing function is at 0x{:x}", addr);
-        let mut function = <unsafe extern "fastcall" fn(*mut c_void, i32, *mut c_char) -> *mut c_void as Function>::from_ptr(FnPointer::from_raw(addr as *mut c_void));
-
+        let mut function = <unsafe extern "cdecl" fn(*mut c_char) -> *mut c_char as Function>::from_ptr(FnPointer::from_raw(addr as *mut c_void));
+        
         VirtualProtect(addr as LPVOID, 32, 0x40, &mut vpret as *mut DWORD);
-        let hook = match Hook::create(function, md5filename as unsafe extern "fastcall" fn(*mut c_void, i32, *mut c_char) -> *mut c_void) {
+
+        let hook = match Hook::create(function, md5filename3 as unsafe extern "cdecl" fn(*mut c_char) -> *mut c_char) {
             Ok(h) => h,
             Err(e) => {
-                error!("MD5 HOOK FAILED {} {:?}", e, e);
+                error!("MD5 HOOK FAILED {} ({:?})", e, e);
                 panic!();
             }
         };
@@ -334,30 +284,7 @@ fn disable_md5_filename_hashing(base: usize) {
             let mut md5hook = MD5_HOOK.lock().unwrap();
             *md5hook = Some(hook);
         }
-        info!("Hooked function 1 at {} and marked region as executable", addr);
-    }
-
-    // Function 2 (Used for audio?)
-    unsafe {
-        let addr = base + 0x00370910;
-        let mut vpret: DWORD = 0;
-        info!("The second filename hashing function is at 0x{:x}", addr);
-        let mut function = <unsafe extern "fastcall" fn(*mut c_void, i32, *mut c_char, i32, i32, i32, i32) -> *mut c_void as Function>::from_ptr(FnPointer::from_raw(addr as *mut c_void));
-
-        VirtualProtect(addr as LPVOID, 32, 0x40, &mut vpret as *mut DWORD);
-        let hook = match Hook::create(function, md5filename2 as unsafe extern "fastcall" fn(*mut c_void, i32, *mut c_char, i32, i32, i32, i32) -> *mut c_void) {
-            Ok(h) => h,
-            Err(e) => {
-                error!("MD5 HOOK FAILED {} {:?}", e, e);
-                panic!();
-            }
-        };
-        hook.enable().unwrap();
-        {
-            let mut md5hook = MD5_HOOK2.lock().unwrap();
-            *md5hook = Some(hook);
-        }
-        info!("Hooked function 2 at {} and marked region as executable", addr);
+        info!("Hooked md5 filename function at {} and marked region as executable", addr);
     }
 }
 
